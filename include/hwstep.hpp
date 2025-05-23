@@ -1,0 +1,75 @@
+#ifndef _HWSTEPHPP_
+#define _HWSTEPHPP_
+
+#include <basestep.hpp>
+#include <AccelStepper.h>
+
+struct StepStatus
+{
+    bool homed;
+    bool moving;
+    int16_t position;
+};
+
+class HWStep : public BaseStep
+{
+
+private:
+
+    AccelStepper *stepper;
+
+    bool _isHomed;
+
+    int _hallPin;
+    int _enPin;
+    int _stepPin;
+    int _dirPin;
+
+    long _speed;
+    long _accel;
+
+    long _maxPosition;
+    long _minPosition;
+    long _homeStep;
+    long _leadingEdgeBump;
+
+    unsigned long _messageTimeStart;
+
+public:
+    HWStep();
+    ~HWStep();
+
+    void init(int stepPin, int dirPin, int enPin, int theHallPin, long maxPos, long minPos, long leadingEdgeBump, long homeStep, long speed, long accel);
+    void run();
+    void hiddenPosition(int location);
+    int hiddenPosition();
+
+    bool homeMagnet();
+
+    int currentPosition();
+    void currentPosition(int position);
+    bool moving();
+    void moveAbsTo(int position, bool ignoreLimits = false);
+    void moveRel(int delta, bool ignoreLimits = false);
+    void doHomeStep(int direction);
+    void doLeadingEdgeBump(int direction);
+
+    bool isPastMax();
+    bool isPastMin();
+
+    void homePosition(int position);
+    int homePosition();
+
+    StepStatus status()
+    {
+        StepStatus status;
+        status.homed = _isHomed;
+        status.moving = moving();
+        status.position = currentPosition();
+        return status;
+    }
+
+
+};
+
+#endif
