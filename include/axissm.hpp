@@ -9,8 +9,19 @@
 
 #include <globals.h>
 
-#define MAX_POSITIVE_NOW_REVERSE 1700 // How far are we willing to go forward before we reverse
-									  // This is different than the overall max, which is set for safety.
+/*
+
+TODO: Determine if this value needs to change from one axis to the next. It was 1700. But for the tilt axis,
+I changed it to the value above. I think that the the tilt axis could be around +350 before its past the magnet. And the most
+I'd want to forward is another 500 for a max of 850.  The tilt axis wouldn't know that it's at 350,
+so perhaps the max positive now reverse should be 850. And the e-stop limit should be 900.  Maybe.AC_COMPCTRL_HYST_HYST100_Val
+
+TODO: Clean-up how limits are set.
+
+Tilt really shouldn't be down that much.
+
+*/
+
 
 //------------------------------------------------------------------------------
 
@@ -32,6 +43,10 @@ struct StartHoming
 struct StopMoving
 {
 };
+struct Reset
+{
+};
+
 
 // data shared between FSM states and outside code
 struct Context
@@ -39,7 +54,8 @@ struct Context
 	HWStep *stepper;
 	int edgeLocationA = std::numeric_limits<int>::min();
 	int edgeLocationB = std::numeric_limits<int>::min();
-	bool desiredMagnet = 0; // Store what transition we are looking for in the magnet. For use by the FSM.
+	bool backedUp = false; // Used to determine if we need to back up after finding the leading edge.
+	int maxHomeSearchBeforeReverse = 500;
 };
 
 struct Payload
@@ -83,7 +99,6 @@ static_assert(FSM::stateId<Error>() == 7, "");
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// top-level region in the hierarchy
 struct On
 	: FSM::State // necessary boilerplate!
 {
@@ -126,11 +141,18 @@ struct Idle
 	void react(const StartHoming &event, FullControl &control)
 	{
 		console.println("    Idle - react to StartHoming");
+		control.context().stepper->reInit();
 		control.changeWith<HomeInit>(Payload{0, false});
 	}
 	void react(const StopMoving &event, FullControl &control)
 	{
 		console.println("    Idle - react to StopMoving");
+	}	
+
+	template <typename TEvent>
+	void react(const TEvent &, FullControl &)
+	{
+		// No-op for unhandled events
 	}	
 };
 
@@ -170,6 +192,48 @@ struct Moving
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+/*
+Homing states
+
+HomeInit -
+  - Enter: Resets edge locations
+  - Update: ChangeWith to:
+	- HomeBackupFirst if already on magnet (back up to get off the magnet)
+	- HomeFindLeadingEdge if not on magnet (start looking for leading edge)
+
+HomeBackupFirst -
+  - Enter: No action
+  - Update: If moving is done, changeWith to HomeFindLeadingEdge
+
+
+HomeFindLeadingEdge -
+  - Enter: No action
+  - Update:
+  	- If past max or min, changeWith to Error
+	- If on magnet, set edgeLocationA and changeWith to HomeFindTrailingEdge
+	- If not on magnet, check if past control.context().maxHomeSearchBeforeReverse
+	  - If back the emergency limit, transition to error
+	  - If past control.context().maxHomeSearchBeforeReverse, back up and changeWith to HomeBackupFirst
+	  - Else, continue moving forward to find leading edge.
+ 	  - (If doHomeStep returns false, we are past the emergency limits, so changeWith to Error)
+
+
+HomeFindTrailingEdge -
+  - Enter: No action
+  - Update:
+  	- If isPastMin or isPastMax, changeWith to Error
+	- If not on magnet, continue moving forward to find trailing edge
+	- If on magnet, set edgeLocationB and changeWith to SetHomeLocation
+	- (If doHomeStep returns false, we are past the emergency limits, so changeWith to Error)
+
+SetHomeLocation -
+  - Enter: No action
+  - Update:
+  	- setHomeLocation - set the stepper's current position to zero
+	- changeWith to Idle
+*/
+
+
 struct HomeInit
 	: FSM::State
 {
@@ -190,14 +254,22 @@ struct HomeInit
 		{
 			console.println("      Already on magnet (1)");
 			control.context().stepper->moveRel(-400, true); // Back up to get off the magnet.
-			// TODO: Consider using something different than moveRel in homing
+			// TODO: Handle potential error. We've gone back too far.
 			control.changeWith<HomeBackupFirst>(Payload{1, false});
 		}
 		else
 		{
 			console.println("      Not on magnet (0)");
-			control.context().stepper->doHomeStep(1);
-			control.changeWith<HomeFindLeadingEdge>(Payload{1, true});
+			if (control.context().stepper->doHomeStep(1))
+				control.changeWith<HomeFindLeadingEdge>(Payload{1, true});
+			else
+			{
+				console.printf("===================================================================\n");
+				console.printf("          >>>> HomeInit::update - past emergency limits\n");
+				console.printf("          >>>> HomeInit::update - transitioning to error\n");
+				console.printf("===================================================================\n");
+				control.changeWith<Error>(Payload{0, false});
+			}
 		}
 
 		control.context().stepper->run();
@@ -234,6 +306,7 @@ struct HomeBackupFirst
 			console.printf("    HomeBackupFirst - done - position: %d magnet: %c\n", control.context().stepper->currentPosition(), control.context().stepper->homeMagnet() ? '1' : '0');
 			control.changeWith<HomeFindLeadingEdge>(Payload{1, true});
 		}
+		// TODO: Handle potential error.
 		control.context().stepper->run();
 	}
 
@@ -287,17 +360,42 @@ struct HomeFindLeadingEdge
 			}
 			else // Have not found the leading edge.
 			{
-				// Have we gone too far? Is so then go in reverse.
-				if (control.context().stepper->currentPosition() > MAX_POSITIVE_NOW_REVERSE)
+				// if (control.context().stepper->currentPosition() > control.context().maxHomeSearchBeforeReverse)
+				// {
+				// 	console.printf("===================================================================\n");
+				// 	console.printf("          >>>> HomeFindLeadingEdge::update - past max home search\n");
+				// 	console.printf("          >>>> HomeFindLeadingEdge::update - transitioning to error\n");
+				// 	console.printf("===================================================================\n");
+				// 	control.changeWith<Error>(Payload{0, false});
+				// }
+				// else
+				if (control.context().stepper->currentPosition() > control.context().maxHomeSearchBeforeReverse)
 				{
-					console.printf("          >>>> %d - Too Far, back way up\n", control.context().stepper->currentPosition());
-					control.context().stepper->moveRel(-2 * MAX_POSITIVE_NOW_REVERSE, true);
-					// TODO: Consider using something different than moveRel in homing
-					control.changeWith<HomeBackupFirst>(Payload{0, false});
+					if (control.context().backedUp)
+					{
+						console.printf("          >>>> %d - Too Far, back way up\n", control.context().stepper->currentPosition());
+						console.printf("          >>>> BUT, WE'VE ALREADY DONE THIS ONCE. SO GO TO ERROR\n");
+						control.changeWith<Error>(Payload{0, false});
+					}
+					else
+					{
+						console.printf("          >>>> %d - Too Far, back way up\n", control.context().stepper->currentPosition());
+						control.context().stepper->moveRel(-2 * control.context().maxHomeSearchBeforeReverse, true);
+						control.context().backedUp = true;
+						control.changeWith<HomeBackupFirst>(Payload{0, false});
+					}
+
 				}
 				else
 				{
-					control.context().stepper->doHomeStep(1);
+					if (!control.context().stepper->doHomeStep(1))
+					{
+						console.printf("===================================================================\n");
+						console.printf("          >>>> HomeFindLeadingEdge::update - past emergency limits\n");
+						console.printf("          >>>> HomeFindLeadingEdge::update - transitioning to error\n");
+						console.printf("===================================================================\n");
+						control.changeWith<Error>(Payload{0, false});
+					}
 				}
 			}
 
@@ -361,8 +459,14 @@ struct HomeFindTrailingEdge
 				}
 				else
 				{
-					control.context().stepper->doHomeStep(1);
-					// TODO: Consider using something different than moveRel in homing
+					if (!control.context().stepper->doHomeStep(1))
+					{
+						console.printf("===================================================================\n");
+						console.printf("          >>>> HomeFindTrailingEdge::update - past emergency limits\n");
+						console.printf("          >>>> HomeFindTrailingEdge::update - transitioning to error\n");
+						console.printf("===================================================================\n");
+						control.changeWith<Error>(Payload{0, false});
+					}
 				}
 			}
 		}
@@ -429,11 +533,19 @@ struct Error
 	void enter(Control &control)
 	{
 		console.printf("   Error::enter");
+		control.context().stepper->isError(true);
+	}
+
+	void react(const Reset &event, FullControl &control)
+	{
+		console.printf("    Error - react to Reset\n");
+		control.context().stepper->isError(false);
+		control.changeWith<Idle>(Payload{0, false});
 	}
 
 	template <typename TEvent>
 	void react(const TEvent &, FullControl &)
 	{
-		console.printf("   THIS AXIS IS IN ERROR. EVENTS ARE IGNORED. FIx AND REBOOT.");
+		console.printf("   THIS AXIS IS IN ERROR. EVENTS ARE IGNORED. FIX AND REBOOT/RESET.");
 	}
 };

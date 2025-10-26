@@ -55,9 +55,11 @@ void setup()
 
   panStep.init(PAN_DIR_PIN, PAN_STEP_PIN, PAN_EN_PIN, PAN_HALL_PIN, 2200, -2200, 2, 1, 4000, 400);
   panContext.stepper = &panStep;
+  panContext.maxHomeSearchBeforeReverse = 1000;
 
-  tiltStep.init(TILT_DIR_PIN, TILT_STEP_PIN, TILT_EN_PIN, TILT_HALL_PIN, 1200, -1200, 50, 1, 3000, 400);
+  tiltStep.init(TILT_DIR_PIN, TILT_STEP_PIN, TILT_EN_PIN, TILT_HALL_PIN, 800 , -600, 50, 1, 3000, 400);
   tiltContext.stepper = &tiltStep;
+  tiltContext.maxHomeSearchBeforeReverse = 400;
 
   counter = 0;
 
@@ -88,6 +90,14 @@ void loop()
         panMachine.react(StopMoving{});
         tiltMachine.react(StopMoving{});
         break;
+
+      case CMD_INIT:
+        panMachine.react(Reset{});
+        tiltMachine.react(Reset{});
+        panStep.reInit();
+        tiltStep.reInit();
+        break;
+
 
       case CMD_HOME:
         switch (rxData.axis)

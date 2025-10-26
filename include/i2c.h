@@ -6,6 +6,7 @@
 
 enum Command : uint8_t { 
   CMD_STOP = 0x00,
+  CMD_INIT,
   CMD_HOME,
   CMD_JOG,
   CMD_GOTO,
@@ -27,6 +28,7 @@ struct I2cRxStruct {
 };
 
 struct AxisStatus {
+  bool error;
   bool homed;
   bool moving;
   int16_t position;
@@ -34,7 +36,6 @@ struct AxisStatus {
 
 // Responsed from Arduino to Raspberry Pi
 struct I2cTxStruct {
-  bool error;
   AxisStatus pan;
   AxisStatus tilt;
 };

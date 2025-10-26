@@ -29,6 +29,7 @@ HWStep::HWStep()
     _leadingEdgeBump = 1;
 
     _isHomed = false;
+    _isError = false;
 }
 
 HWStep::~HWStep()
@@ -61,14 +62,23 @@ void HWStep::init(int dirPin, int stepPin, int enPin, int theHallPin, long maxPo
     _minPosition = minPos;
     _homeStep = homeStep;
     _leadingEdgeBump = leadingEdgeBump;
+
+    _isHomed = false;
+    _isError = false;
+}
+
+void HWStep::reInit()
+{
+    _isHomed = false;
+    _isError = false;
+    stepper->setCurrentPosition(0);
 }
 
 void HWStep::run()
 {
     if (stepper->distanceToGo() == 0)
     {
-        unsigned long difference = timeElapsed - timeStart;
-        // console.printf("Time elapsed: %lu\n", difference);
+        // console.printf("Time elapsed: %lu\n", (unsigned long)timeElapsed - timeStart));
 
         stepper->disableOutputs(); // TODO: Maybe put disable Outputs on a delay?
     }
@@ -105,7 +115,8 @@ void HWStep::moveAbsTo(int position, bool ignoreLimits)
     if (!ignoreLimits)
     {
         if (position >= this->_maxPosition || position <= this -> _minPosition) {
-            console.printf("moveAbsTo: MOVE OUTSIDE LIMITS. COMMAND IGNORED.\n");
+            console.printf("moveAbsTo: MOVE OUTSIDE LIMITS. AXIS IS IN ERROR.\n");
+            _isError = true;
             return;
         }
     }
@@ -122,7 +133,8 @@ void HWStep::moveRel(int delta, bool ignoreLimits)
     {    
         if (stepper->currentPosition() + delta >= this->_maxPosition || stepper->currentPosition() + delta <= this -> _minPosition)
         {
-            console.printf("moveRel: MOVE OUTSIDE LIMITS. COMMAND IGNORED.\n");
+            console.printf("moveRel: MOVE OUTSIDE LIMITS. AXIS IS IN ERROR.\n");
+            _isError = true;
             return;
         }
     }
@@ -134,12 +146,16 @@ void HWStep::moveRel(int delta, bool ignoreLimits)
     timeStart = timeElapsed;
 }
 
-void HWStep::doHomeStep(int direction)
+bool HWStep::doHomeStep(int direction)
 {
     int delta = direction * _homeStep;
 
-    if (stepper->currentPosition() + delta >= this->_maxPosition || stepper->currentPosition() + delta <= this -> _minPosition)
-        console.printf("doHomeStep: MOVE OUTSIDE LIMITS. COMMAND IGNORED.\n");
+    if (stepper->currentPosition() + delta >= this->_maxPosition || stepper->currentPosition() + delta <= this -> _minPosition) {
+        console.printf("doHomeStep: MOVE OUTSIDE LIMITS. AXIS IS NOW IN ERROR.\n");
+        _isError = true;
+        return false;
+
+    }
     else
     {
         stepper->move(delta);
@@ -147,14 +163,20 @@ void HWStep::doHomeStep(int direction)
     }
 
     timeStart = timeElapsed;
+
+    return true;
 }
 
-void HWStep::doLeadingEdgeBump(int direction)
+bool HWStep::doLeadingEdgeBump(int direction)
 {
     int delta = direction * _leadingEdgeBump;
 
     if (stepper->currentPosition() + delta >= this->_maxPosition || stepper->currentPosition() + delta <= this -> _minPosition)
-        console.printf("doLeadingEdgeBump: MOVE OUTSIDE LIMITS. COMMAND IGNORED.\n");
+    {
+        console.printf("doLeadingEdgeBump: MOVE OUTSIDE LIMITS. AXIS IS NOW IN ERROR.\n");
+        _isError = true;
+        return false;
+    }
     else
     {
         stepper->move(delta);
@@ -162,6 +184,8 @@ void HWStep::doLeadingEdgeBump(int direction)
     }
 
     timeStart = timeElapsed;
+
+    return true;
 }
 
 
@@ -173,6 +197,13 @@ bool HWStep::isPastMin()
 {
     return stepper->currentPosition() < _minPosition;
 }
+
+void HWStep::isError(bool isError)
+{
+    _isError = isError;
+
+}
+
 void HWStep::homePosition(int position)
 {
     stepper->setCurrentPosition(position);

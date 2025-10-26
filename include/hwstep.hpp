@@ -6,8 +6,9 @@
 
 struct StepStatus
 {
-    bool homed;
-    bool moving;
+    uint8_t error;
+    uint8_t homed;
+    uint8_t moving;
     int16_t position;
 };
 
@@ -18,6 +19,7 @@ private:
 
     AccelStepper *stepper;
 
+    bool _isError;
     bool _isHomed;
 
     int _hallPin;
@@ -41,6 +43,7 @@ public:
 
     void init(int stepPin, int dirPin, int enPin, int theHallPin, long maxPos, long minPos, long leadingEdgeBump, long homeStep, long speed, long accel);
     void run();
+    void reInit();
     void hiddenPosition(int location);
     int hiddenPosition();
 
@@ -51,8 +54,8 @@ public:
     bool moving();
     void moveAbsTo(int position, bool ignoreLimits = false);
     void moveRel(int delta, bool ignoreLimits = false);
-    void doHomeStep(int direction);
-    void doLeadingEdgeBump(int direction);
+    bool doHomeStep(int direction); // Returns true if successful. False if it a limit.
+    bool doLeadingEdgeBump(int direction);
 
     bool isPastMax();
     bool isPastMin();
@@ -60,16 +63,17 @@ public:
     void homePosition(int position);
     int homePosition();
 
+    void isError(bool isError);
+
     StepStatus status()
     {
         StepStatus status;
+        status.error = _isError;
         status.homed = _isHomed;
         status.moving = moving();
         status.position = currentPosition();
         return status;
     }
-
-
 };
 
 #endif
