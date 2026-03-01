@@ -19,6 +19,7 @@ private:
 
     AccelStepper *stepper;
 
+    const char* _name;
     bool _isError;
     bool _isHomed;
 
@@ -41,7 +42,7 @@ public:
     HWStep();
     ~HWStep();
 
-    void init(int stepPin, int dirPin, int enPin, int theHallPin, long maxPos, long minPos, long leadingEdgeBump, long homeStep, long speed, long accel);
+    void init(const char* name, int stepPin, int dirPin, int enPin, int theHallPin, long maxPos, long minPos, long leadingEdgeBump, long homeStep, long speed, long accel);
     void run();
     void reInit();
     void hiddenPosition(int location);
@@ -64,6 +65,9 @@ public:
     int homePosition();
 
     void isError(bool isError);
+    bool isError() const { return _isError; }
+
+    const char* name() { return _name; }
 
     StepStatus status()
     {

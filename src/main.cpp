@@ -53,11 +53,11 @@ void setup()
 
   console.println("Setting up");
 
-  panStep.init(PAN_DIR_PIN, PAN_STEP_PIN, PAN_EN_PIN, PAN_HALL_PIN, 2200, -2200, 2, 1, 4000, 400);
+  panStep.init("Pan", PAN_DIR_PIN, PAN_STEP_PIN, PAN_EN_PIN, PAN_HALL_PIN, 2200, -2200, 2, 1, 4000, 400);
   panContext.stepper = &panStep;
   panContext.maxHomeSearchBeforeReverse = 1000;
 
-  tiltStep.init(TILT_DIR_PIN, TILT_STEP_PIN, TILT_EN_PIN, TILT_HALL_PIN, 800 , -600, 50, 1, 3000, 400);
+  tiltStep.init("Tilt", TILT_DIR_PIN, TILT_STEP_PIN, TILT_EN_PIN, TILT_HALL_PIN, 800 , -600, 50, 1, 200, 25);
   tiltContext.stepper = &tiltStep;
   tiltContext.maxHomeSearchBeforeReverse = 400;
 
@@ -103,12 +103,12 @@ void loop()
         switch (rxData.axis)
         {
           case PAN:
-            console.printf("PAN_HOME\n");
+            // console.printf("PAN_HOME\n");
             panMachine.react(StartHoming{});
             break;
 
           case TILT:
-            console.printf("TILT_HOME\n");
+            // console.printf("TILT_HOME\n");
             tiltMachine.react(StartHoming{});
             break;
         }
@@ -118,12 +118,12 @@ void loop()
       switch (rxData.axis)
       {
         case PAN:
-          console.printf("PAN_JOG\n");
+          // console.printf("PAN_JOG\n");
           panMachine.react(MoveRel{static_cast<bool>(rxData.ignoreLimits), rxData.value});
           break;
 
         case TILT:
-          console.printf("TILT_JOG\n");
+          // console.printf("TILT_JOG\n");
           tiltMachine.react(MoveRel{static_cast<bool>(rxData.ignoreLimits), rxData.value});
           break;
       }
@@ -133,16 +133,19 @@ void loop()
       switch (rxData.axis)
       {
         case PAN:
-          console.printf("PAN_GOTO\n");
+          // console.printf("PAN_GOTO\n");
           panMachine.react(MoveAbs{static_cast<bool>(rxData.ignoreLimits), rxData.value});
           break;
 
         case TILT:
-          console.printf("TILT_GOTO\n");
+          // console.printf("TILT_GOTO\n");
           tiltMachine.react(MoveAbs{static_cast<bool>(rxData.ignoreLimits), rxData.value});
           break;
       }
       break;
+
+    case CMD_SWEEP:
+      break; // Not implemented
     }
   }
 

@@ -117,7 +117,7 @@ struct Idle
 {
 	void enter(Control &control)
 	{
-		console.println("  Idle::enter");
+		// console.println("  Idle::enter");
 	}
 
 	// state can initiate transitions to _any_ other state
@@ -128,15 +128,21 @@ struct Idle
 
 	void react(const MoveRel &event, FullControl &control)
 	{
-		console.printf("    Idle - react to MoveRel: %d\n", event.delta);
+		console.printf("    Idle - react to MoveRel [%s]: %d\n", control.context().stepper->name(), event.delta);
 		control.context().stepper->moveRel(event.delta, event.ignoreLimits);
-		control.changeWith<Moving>(Payload{0, false});
+		if (control.context().stepper->isError())
+			control.changeWith<Error>(Payload{0, false});
+		else
+			control.changeWith<Moving>(Payload{0, false});
 	}
 	void react(const MoveAbs &event, FullControl &control)
 	{
-		console.printf("    Idle - react to MoveAbs: %d\n", event.position);
+		console.printf("    Idle - react to MoveAbs [%s]: %d\n", control.context().stepper->name(), event.position);
 		control.context().stepper->moveAbsTo(event.position, event.ignoreLimits);
-		control.changeWith<Moving>(Payload{0, false});
+		if (control.context().stepper->isError())
+			control.changeWith<Error>(Payload{0, false});
+		else
+			control.changeWith<Moving>(Payload{0, false});
 	}
 	void react(const StartHoming &event, FullControl &control)
 	{
@@ -163,7 +169,7 @@ struct Moving
 {
 	void enter(Control &)
 	{
-		console.println("  Moving::enter");
+		// console.println("  Moving::enter");
 	}
 
 	void update(FullControl &control)
@@ -171,7 +177,7 @@ struct Moving
 		// console.println("  Moving::update");
 		if (control.context().stepper->moving() == false)
 		{
-			console.printf("  Moving::done - position: %d magnet: %c\n", control.context().stepper->currentPosition(), control.context().stepper->homeMagnet() ? '1' : '0');
+			console.printf("    Moving::done [%s] - position: %d magnet: %c\n", control.context().stepper->name(), control.context().stepper->currentPosition(), control.context().stepper->homeMagnet() ? '1' : '0');
 			control.changeWith<Idle>(Payload{0, false});
 		}
 		control.context().stepper->run();
@@ -240,8 +246,9 @@ struct HomeInit
 	void enter(Control &control)
 	{
 		console.println("    HomeInit::enter");
+		control.context().stepper->reInit();
 		control.context().edgeLocationA = std::numeric_limits<int>::min();
-		control.context().edgeLocationB = std::numeric_limits<int>::min();
+		control.context().edgeLocationB = std::numeric_limits<int>::min();		
 	}
 
 	// We first start looking forward. Always forward.  Either for the front edge if we're on the magnet.
@@ -532,20 +539,20 @@ struct Error
 {
 	void enter(Control &control)
 	{
-		console.printf("   Error::enter");
+		console.printf("   *** ERROR STATE ENTERED [%s] ***\n", control.context().stepper->name());
 		control.context().stepper->isError(true);
 	}
 
 	void react(const Reset &event, FullControl &control)
 	{
-		console.printf("    Error - react to Reset\n");
+		console.printf("   *** ERROR STATE CLEARED [%s] ***\n", control.context().stepper->name());
 		control.context().stepper->isError(false);
 		control.changeWith<Idle>(Payload{0, false});
 	}
 
 	template <typename TEvent>
-	void react(const TEvent &, FullControl &)
+	void react(const TEvent &, FullControl &control)
 	{
-		console.printf("   THIS AXIS IS IN ERROR. EVENTS ARE IGNORED. FIX AND REBOOT/RESET.");
+		console.printf("   *** [%s] IS IN ERROR - ALL COMMANDS IGNORED - SEND CMD_INIT TO RESET ***\n", control.context().stepper->name());
 	}
 };

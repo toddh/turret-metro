@@ -16,20 +16,26 @@ void hexDump(const void *data, size_t size)
 {
   const unsigned char *bytes = static_cast<const unsigned char *>(data);
 
-  console.printf("Hex Dump (%d bytes): ", size);
+  LOG_I2C_PRINTF("Hex Dump (%d bytes): ", size);
 
   for (size_t i = 0; i < size; ++i)
   {
-    console.printf("%02x ", bytes[i]);
+    LOG_I2C_PRINTF("%02x ", bytes[i]);
     if ((i + 1) % 16 == 0)
-      console.printf("\n");
+      LOG_I2C_PRINTF("\n");
   }
-  console.printf("\n");
+  LOG_I2C_PRINTF("\n");
 }
 
 void receiveEvent(int numBytesReceived)
 {
-  // console.printf("receiveEvent numBytesReceived: %d\n", numBytesReceived);
+  LOG_I2C_PRINTF("receiveEvent numBytesReceived: %d\n", numBytesReceived);
+  if (numBytesReceived != sizeof(I2cRxStruct))
+  {
+    LOG_I2C_PRINTF("receiveEvent: discarding %d bytes (expected %d)\n", numBytesReceived, sizeof(I2cRxStruct));
+    while (Wire.available()) Wire.read();
+    return;
+  }
   if (newRxData == false)
   {
     // copy the data to rxData
@@ -61,28 +67,28 @@ void create_message(uint8_t* bytes_to_send, size_t max_length, uint8_t* data, si
   memcpy(bytes_to_send, data, length);
 
   uint8_t checksum = calculateChecksum(data, length);
-  console.printf("Checksum: %02x\n", checksum);
-  console.printf("Max length: %d\n", max_length);
+  LOG_I2C_PRINTF("Checksum: %02x\n", checksum);
+  LOG_I2C_PRINTF("Max length: %d\n", max_length);
   bytes_to_send[length] = checksum;
 }
 
 void requestEvent()
 {
-  txData.pan.error = false;
-  txData.pan.homed = true;
-  txData.pan.moving = false;
-  txData.pan.position = 0x3333;
+  // txData.pan.error = false;
+  // txData.pan.homed = true;
+  // txData.pan.moving = false;
+  // txData.pan.position = 0x3333;
 
-  txData.tilt.error = true;
-  txData.tilt.homed = false;
-  txData.tilt.moving = true;
-  txData.tilt.position = 0x4444;
+  // txData.tilt.error = true;
+  // txData.tilt.homed = false;
+  // txData.tilt.moving = true;
+  // txData.tilt.position = 0x4444;
 
   uint8_t bytes_to_send[sizeof(txData) + 1]; // +1 for checksum
 
   create_message(bytes_to_send, sizeof(bytes_to_send), (uint8_t*)&txData, sizeof(txData));
 
-  hexDump(bytes_to_send, sizeof(bytes_to_send));
+  // hexDump(bytes_to_send, sizeof(bytes_to_send));
   Wire.write(bytes_to_send, sizeof(bytes_to_send));
 }
 
@@ -97,17 +103,15 @@ bool I2CCtrl::checkForMessage(I2cRxStruct &msg)
 {
   if (newRxData)
   {
-    // for (size_t i = 0; i < sizeof(rxData); ++i) {
-    //   console.printf("%02x", ((uint8_t*)&rxData)[i], HEX);
-    //   console.print(" ");
-    // }
-    // console.println();
+    for (size_t i = 0; i < sizeof(rxData); ++i) {
+      LOG_I2C_PRINTF("%02x ", ((uint8_t*)&rxData)[i]);
+    }
+    LOG_I2C_PRINTF("\n");
 
-    // console.printf("rxData.command: %u\n", rxData.command);
-    // console.printf("rxData.axis: %u\n", rxData.axis);
-    // console.printf("rxData.ignoreLimits: %u\n", rxData.ignoreLimits);
-    // console.printf("rxData.value: %d\n", rxData.value);
-    // msg = rxData;
+    LOG_I2C_PRINTF("rxData.command: %u\n", rxData.command);
+    LOG_I2C_PRINTF("rxData.axis: %u\n", rxData.axis);
+    LOG_I2C_PRINTF("rxData.ignoreLimits: %u\n", rxData.ignoreLimits);
+    LOG_I2C_PRINTF("rxData.value: %d\n", rxData.value);
     memcpy(&msg, &rxData, sizeof(rxData));
 
     newRxData = false;
