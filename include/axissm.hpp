@@ -56,6 +56,7 @@ struct Context
 	int edgeLocationB = std::numeric_limits<int>::min();
 	bool backedUp = false; // Used to determine if we need to back up after finding the leading edge.
 	int maxHomeSearchBeforeReverse = 500;
+	int minEdgeSeparation = 100; // Minimum steps between edgeA and edgeB to accept as a valid detection.
 };
 
 struct Payload
@@ -248,7 +249,8 @@ struct HomeInit
 		console.println("    HomeInit::enter");
 		control.context().stepper->reInit();
 		control.context().edgeLocationA = std::numeric_limits<int>::min();
-		control.context().edgeLocationB = std::numeric_limits<int>::min();		
+		control.context().edgeLocationB = std::numeric_limits<int>::min();
+		control.context().backedUp = false;
 	}
 
 	// We first start looking forward. Always forward.  Either for the front edge if we're on the magnet.
@@ -267,16 +269,7 @@ struct HomeInit
 		else
 		{
 			console.println("      Not on magnet (0)");
-			if (control.context().stepper->doHomeStep(1))
-				control.changeWith<HomeFindLeadingEdge>(Payload{1, true});
-			else
-			{
-				console.printf("===================================================================\n");
-				console.printf("          >>>> HomeInit::update - past emergency limits\n");
-				console.printf("          >>>> HomeInit::update - transitioning to error\n");
-				console.printf("===================================================================\n");
-				control.changeWith<Error>(Payload{0, false});
-			}
+			control.changeWith<HomeFindLeadingEdge>(Payload{1, true});
 		}
 
 		control.context().stepper->run();
@@ -338,12 +331,11 @@ struct HomeFindLeadingEdge
 	void enter(PlanControl &control)
 	{
 		console.printf("        HomeFindLeadingEdge::enter\n");
+		control.context().stepper->startHomingMove(1);
 	}
 
 	void update(FullControl &control)
 	{
-		// console.printf("        HomeFindEdge::update - magnet: %c\n", control.context().stepper->homeMagnet() ? 'M' : 'N');
-
 		if (control.context().stepper->isPastMax() || control.context().stepper->isPastMin())
 		{
 			console.printf("===================================================================\n");
@@ -351,63 +343,54 @@ struct HomeFindLeadingEdge
 			console.printf("          >>>> HomeFindLeadingEdge::update - transitioning to error\n");
 			console.printf("===================================================================\n");
 			control.changeWith<Error>(Payload{0, false});
+			return;
+		}
+
+		if (control.context().stepper->homeMagnet() == 1)
+		{
+			// Found leading edge — stop immediately and record position
+			control.context().stepper->stopMove();
+			control.context().edgeLocationA = control.context().stepper->currentPosition();
+			console.printf("          >>>> edgeA found: %d\n", control.context().edgeLocationA);
+			console.printf("		  >>>> magnet: %d\n", control.context().stepper->homeMagnet());
+
+			control.context().stepper->doLeadingEdgeBump(1);
+			control.changeWith<HomeFindTrailingEdge>(Payload{0, false});
+		}
+		else if (!control.context().stepper->moving())
+		{
+			// Ran out of range without finding magnet
+			if (control.context().backedUp)
+			{
+				console.printf("          >>>> HomeFindLeadingEdge: no magnet found after backup, going to error\n");
+				control.changeWith<Error>(Payload{0, false});
+			}
+			else
+			{
+				console.printf("          >>>> HomeFindLeadingEdge: no magnet in forward range, backing up\n");
+				control.context().stepper->moveRel(-2 * control.context().maxHomeSearchBeforeReverse, true);
+				control.context().backedUp = true;
+				control.changeWith<HomeBackupFirst>(Payload{0, false});
+			}
 		}
 		else
 		{
-			if (control.context().stepper->homeMagnet() == 1)
+			if (!control.context().backedUp &&
+				control.context().stepper->currentPosition() > control.context().maxHomeSearchBeforeReverse)
 			{
-				// We have found the leading edge.
-
-				control.context().edgeLocationA = control.context().stepper->currentPosition();
-				console.printf("          >>>> edgeA found: %d\n", control.context().edgeLocationA);
-				console.printf("		  >>>> magnet: %d\n", control.context().stepper->homeMagnet());
-
-				control.context().stepper->doLeadingEdgeBump(1);
-				control.changeWith<HomeFindTrailingEdge>(Payload{0, false});
+				LOG_HOMING_PRINTF("    HomeFindLeadingEdge: searching pos=%d magnet=%d\n",
+					control.context().stepper->currentPosition(),
+					control.context().stepper->homeMagnet());
+				console.printf("          >>>> HomeFindLeadingEdge: past maxHomeSearchBeforeReverse (%d), backing up\n",
+					control.context().maxHomeSearchBeforeReverse);
+				control.context().stepper->stopMove();
+				control.context().stepper->moveRel(-2 * control.context().maxHomeSearchBeforeReverse, true);
+				control.context().backedUp = true;
+				control.changeWith<HomeBackupFirst>(Payload{0, false});
 			}
-			else // Have not found the leading edge.
-			{
-				// if (control.context().stepper->currentPosition() > control.context().maxHomeSearchBeforeReverse)
-				// {
-				// 	console.printf("===================================================================\n");
-				// 	console.printf("          >>>> HomeFindLeadingEdge::update - past max home search\n");
-				// 	console.printf("          >>>> HomeFindLeadingEdge::update - transitioning to error\n");
-				// 	console.printf("===================================================================\n");
-				// 	control.changeWith<Error>(Payload{0, false});
-				// }
-				// else
-				if (control.context().stepper->currentPosition() > control.context().maxHomeSearchBeforeReverse)
-				{
-					if (control.context().backedUp)
-					{
-						console.printf("          >>>> %d - Too Far, back way up\n", control.context().stepper->currentPosition());
-						console.printf("          >>>> BUT, WE'VE ALREADY DONE THIS ONCE. SO GO TO ERROR\n");
-						control.changeWith<Error>(Payload{0, false});
-					}
-					else
-					{
-						console.printf("          >>>> %d - Too Far, back way up\n", control.context().stepper->currentPosition());
-						control.context().stepper->moveRel(-2 * control.context().maxHomeSearchBeforeReverse, true);
-						control.context().backedUp = true;
-						control.changeWith<HomeBackupFirst>(Payload{0, false});
-					}
-
-				}
-				else
-				{
-					if (!control.context().stepper->doHomeStep(1))
-					{
-						console.printf("===================================================================\n");
-						console.printf("          >>>> HomeFindLeadingEdge::update - past emergency limits\n");
-						console.printf("          >>>> HomeFindLeadingEdge::update - transitioning to error\n");
-						console.printf("===================================================================\n");
-						control.changeWith<Error>(Payload{0, false});
-					}
-				}
-			}
-
-			control.context().stepper->run();
 		}
+
+		control.context().stepper->run();
 	}
 
 	void react(const StopMoving &event, FullControl &control)
@@ -430,6 +413,7 @@ struct HomeFindTrailingEdge
 	void enter(Control &control)
 	{
 		console.printf("        HomeFindTrailingEdge::enter\n");
+		control.context().stepper->doHomeStep(1);
 	}
 
 	void update(FullControl &control)
@@ -440,40 +424,47 @@ struct HomeFindTrailingEdge
 		{
 			console.printf("===================================================================\n");
 			console.printf("          >>>> HomeFindTrailingEdge::update - past max or min\n");
-			console.printf("          >>>> HomeFindLeadingEdge::update - transitioning to Error\n");
+			console.printf("          >>>> HomeFindTrailingEdge::update - transitioning to Error\n");
 			console.printf("===================================================================\n");
 			control.changeWith<Error>(Payload{0, false});
+			return;
 		}
-		else
+
+		if (control.context().stepper->moving() == false)
 		{
-			if (control.context().stepper->moving() == false)
+			if (control.context().stepper->homeMagnet() == 0)
 			{
+				int candidateB = control.context().stepper->currentPosition();
+				int separation = candidateB - control.context().edgeLocationA;
 
-				if (control.context().stepper->homeMagnet() == 0)
+				if (separation < control.context().minEdgeSeparation)
 				{
-					control.context().edgeLocationB = control.context().stepper->currentPosition();
-
-					console.printf("          >>>> both edges found\n");
-					console.printf("		  >>>> magnet: %d\n", control.context().stepper->homeMagnet());
-					console.printf("          >>>> edgeA: %d\n", control.context().edgeLocationA);
-					console.printf("          >>>> edgeB: %d\n", control.context().edgeLocationB);
-
-					int homePosition = (control.context().edgeLocationA + control.context().edgeLocationB) / 2;
-					console.printf("          >>>> Home Position: %d\n", homePosition);
-
-					control.context().stepper->moveAbsTo(homePosition);
-					control.changeWith<SetHomeLocation>(Payload{0, false});
+					console.printf("          >>>> HomeFindTrailingEdge: edges too close (sep=%d < min=%d), false detection - retrying\n",
+						separation, control.context().minEdgeSeparation);
+					control.changeWith<HomeInit>(Payload{0, false});
+					return;
 				}
-				else
+
+				control.context().edgeLocationB = candidateB;
+
+				console.printf("          >>>> both edges found\n");
+				console.printf("		  >>>> magnet: %d\n", control.context().stepper->homeMagnet());
+				console.printf("          >>>> edgeA: %d\n", control.context().edgeLocationA);
+				console.printf("          >>>> edgeB: %d\n", control.context().edgeLocationB);
+
+				int homePosition = (control.context().edgeLocationA + control.context().edgeLocationB) / 2;
+				console.printf("          >>>> Home Position: %d\n", homePosition);
+
+				control.context().stepper->moveAbsTo(homePosition);
+				control.changeWith<SetHomeLocation>(Payload{0, false});
+			}
+			else
+			{
+				// Still on magnet — take one more small step forward
+				if (!control.context().stepper->doHomeStep(1))
 				{
-					if (!control.context().stepper->doHomeStep(1))
-					{
-						console.printf("===================================================================\n");
-						console.printf("          >>>> HomeFindTrailingEdge::update - past emergency limits\n");
-						console.printf("          >>>> HomeFindTrailingEdge::update - transitioning to error\n");
-						console.printf("===================================================================\n");
-						control.changeWith<Error>(Payload{0, false});
-					}
+					control.changeWith<Error>(Payload{0, false});
+					return;
 				}
 			}
 		}

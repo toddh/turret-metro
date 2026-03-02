@@ -96,6 +96,8 @@ void loop()
         tiltMachine.react(Reset{});
         panStep.reInit();
         tiltStep.reInit();
+        panStep.holdEnabled(false);
+        tiltStep.holdEnabled(false);
         break;
 
 
@@ -146,6 +148,18 @@ void loop()
 
     case CMD_SWEEP:
       break; // Not implemented
+
+    case CMD_HOLD:
+      switch (rxData.axis)
+      {
+        case PAN:
+          panStep.holdEnabled(rxData.value != 0);
+          break;
+        case TILT:
+          tiltStep.holdEnabled(rxData.value != 0);
+          break;
+      }
+      break;
     }
   }
 

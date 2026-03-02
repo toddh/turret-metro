@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/todd/Documents/PlatformIO/Projects/**)"
+      "Read(//Users/todd/Documents/PlatformIO/Projects/**)",
+      "Bash(~/.platformio/penv/bin/pio run)"
     ],
     "deny": [],
     "ask": []

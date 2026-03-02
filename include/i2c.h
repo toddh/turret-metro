@@ -11,6 +11,7 @@ enum Command : uint8_t {
   CMD_JOG,
   CMD_GOTO,
   CMD_SWEEP,
+  CMD_HOLD,
 };
 
 enum Axis : uint8_t {

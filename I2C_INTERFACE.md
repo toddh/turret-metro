@@ -44,6 +44,7 @@ struct I2cRxStruct {
 | `CMD_JOG` | `0x03` | Yes | Yes | Moves specified axis by `value` steps relative to current position |
 | `CMD_GOTO` | `0x04` | Yes | Yes | Moves specified axis to absolute position `value` |
 | `CMD_SWEEP` | `0x05` | — | — | Defined but **not implemented** |
+| `CMD_HOLD` | `0x06` | Yes | Yes | Keeps motor energized after motion completes. `value` 1 = hold (maintain torque), 0 = release (de-energize when idle). Per-axis. Reset to off by `CMD_INIT`. |
 
 ### Axis Codes
 

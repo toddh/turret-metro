@@ -22,6 +22,8 @@ private:
     const char* _name;
     bool _isError;
     bool _isHomed;
+    bool _holdEnabled;
+    bool _outputsEnabled;
 
     int _hallPin;
     int _enPin;
@@ -57,6 +59,8 @@ public:
     void moveRel(int delta, bool ignoreLimits = false);
     bool doHomeStep(int direction); // Returns true if successful. False if it a limit.
     bool doLeadingEdgeBump(int direction);
+    void startHomingMove(int direction); // Begins continuous move toward limit for magnet search
+    void stopMove();                     // Immediately cancels current move
 
     bool isPastMax();
     bool isPastMin();
@@ -66,6 +70,9 @@ public:
 
     void isError(bool isError);
     bool isError() const { return _isError; }
+
+    void holdEnabled(bool enabled);
+    bool holdEnabled() const { return _holdEnabled; }
 
     const char* name() { return _name; }
 

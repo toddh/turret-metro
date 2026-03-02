@@ -15,6 +15,8 @@ extern RTTStream _rttstream;
 #define LOG_HWSTEP 0
 #define LOG_I2C 0
 #define LOG_IDLE_STATE 0
+#define LOG_HOLD 1
+#define LOG_HOMING 1
 
 // Conditional logging macros
 #if LOG_HWSTEP
@@ -35,6 +37,18 @@ extern RTTStream _rttstream;
   #define LOG_I2C_PRINT(...)
   #define LOG_I2C_PRINTLN(...)
   #define LOG_I2C_PRINTF(...)
+#endif
+
+#if LOG_HOLD
+  #define LOG_HOLD_PRINTF(...) console.printf(__VA_ARGS__)
+#else
+  #define LOG_HOLD_PRINTF(...)
+#endif
+
+#if LOG_HOMING
+  #define LOG_HOMING_PRINTF(...) console.printf(__VA_ARGS__)
+#else
+  #define LOG_HOMING_PRINTF(...)
 #endif
 
 #if LOG_IDLE_STATE

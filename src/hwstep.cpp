@@ -31,6 +31,8 @@ HWStep::HWStep()
 
     _isHomed = false;
     _isError = false;
+    _holdEnabled = false;
+    _outputsEnabled = false;
 }
 
 HWStep::~HWStep()
@@ -67,12 +69,15 @@ void HWStep::init(const char* name, int dirPin, int stepPin, int enPin, int theH
 
     _isHomed = false;
     _isError = false;
+    _holdEnabled = false;
+    _outputsEnabled = false;
 }
 
 void HWStep::reInit()
 {
     _isHomed = false;
     _isError = false;
+    _outputsEnabled = false;
     stepper->setCurrentPosition(0);
 }
 
@@ -80,9 +85,23 @@ void HWStep::run()
 {
     if (stepper->distanceToGo() == 0)
     {
-        // console.printf("Time elapsed: %lu\n", (unsigned long)timeElapsed - timeStart));
-
-        stepper->disableOutputs(); // TODO: Maybe put disable Outputs on a delay?
+        if (!_holdEnabled)
+        {
+            if (_outputsEnabled)
+            {
+                LOG_HOLD_PRINTF("%s::run: motion complete - disabling outputs\n", _name);
+                stepper->disableOutputs();
+                _outputsEnabled = false;
+            }
+        }
+        else
+        {
+            if (!_outputsEnabled)
+            {
+                LOG_HOLD_PRINTF("%s::run: motion complete - hold active, keeping outputs enabled\n", _name);
+                _outputsEnabled = true;
+            }
+        }
     }
     else
     {
@@ -124,7 +143,9 @@ void HWStep::moveAbsTo(int position, bool ignoreLimits)
     }
 
     stepper->moveTo(position);
+    LOG_HOLD_PRINTF("%s::moveAbsTo: enabling outputs, target=%d, hold=%s\n", _name, position, _holdEnabled ? "ON" : "OFF");
     stepper->enableOutputs();
+    _outputsEnabled = true;
 
     timeStart = timeElapsed;
 }
@@ -143,7 +164,9 @@ void HWStep::moveRel(int delta, bool ignoreLimits)
 
 
     stepper->move(delta);
+    LOG_HOLD_PRINTF("%s::moveRel: enabling outputs, delta=%d, hold=%s\n", _name, delta, _holdEnabled ? "ON" : "OFF");
     stepper->enableOutputs();
+    _outputsEnabled = true;
 
     timeStart = timeElapsed;
 }
@@ -162,6 +185,11 @@ bool HWStep::doHomeStep(int direction)
     {
         stepper->move(delta);
         stepper->enableOutputs();
+        if (abs((int)stepper->currentPosition()) % 10 == 0)
+        {
+            LOG_HOMING_PRINTF("%s::doHomeStep: pos=%d dir=%d magnet=%d\n",
+                _name, (int)stepper->currentPosition(), direction, homeMagnet());
+        }
     }
 
     timeStart = timeElapsed;
@@ -181,6 +209,8 @@ bool HWStep::doLeadingEdgeBump(int direction)
     }
     else
     {
+        LOG_HOMING_PRINTF("%s::doLeadingEdgeBump: pos_before=%d dir=%d delta=%d\n",
+            _name, (int)stepper->currentPosition(), direction, delta);
         stepper->move(delta);
         stepper->enableOutputs();
     }
@@ -190,6 +220,21 @@ bool HWStep::doLeadingEdgeBump(int direction)
     return true;
 }
 
+
+void HWStep::startHomingMove(int direction)
+{
+    long target = (direction > 0) ? _maxPosition : _minPosition;
+    stepper->moveTo(target);
+    stepper->enableOutputs();
+    _outputsEnabled = true;
+    LOG_HOMING_PRINTF("%s::startHomingMove: dir=%d target=%ld\n", _name, direction, target);
+}
+
+void HWStep::stopMove()
+{
+    stepper->moveTo(stepper->currentPosition()); // cancel remaining move immediately
+    LOG_HOMING_PRINTF("%s::stopMove: pos=%d\n", _name, (int)stepper->currentPosition());
+}
 
 bool HWStep::isPastMax()
 {
@@ -204,6 +249,18 @@ void HWStep::isError(bool isError)
 {
     _isError = isError;
 
+}
+
+void HWStep::holdEnabled(bool enabled)
+{
+    _holdEnabled = enabled;
+    LOG_HOLD_PRINTF("%s::holdEnabled: hold set to %s\n", _name, enabled ? "ON" : "OFF");
+    if (!enabled && stepper->distanceToGo() == 0)
+    {
+        LOG_HOLD_PRINTF("%s::holdEnabled: stationary, disabling outputs now\n", _name);
+        stepper->disableOutputs();
+        _outputsEnabled = false;
+    }
 }
 
 void HWStep::homePosition(int position)
